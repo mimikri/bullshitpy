@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Analysis Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="{{ url_for('index') }}" class="navbar-brand">bullshitometer</a>
+        <ul class="navbar-nav">
+            <li><a href="{{ url_for('index') }}" class="nav-link">Analyse</a></li>
+            <li><a href="{{ url_for('overview') }}" class="nav-link">Dashboard</a></li>
+            <li><a href="{{ url_for('options') }}" class="nav-link">Optionen</a></li>
+        </ul>
+        <div class="navbar-right">
+            <button id="theme-switcher" class="theme-switcher">☀️</button>
+        </div>
+    </nav>
+    <div class="container">
+        <header>
+            <h1>Video Analysis Dashboard</h1>
+        </header>
+
+        <table id="videoTable">
+            <thead>
+                <tr>
+                    <th data-sort="video_title">Titel</th>
+                    <th data-sort="channel_title">Kanal</th>
+                    <th data-sort="set_date">Datum</th>
+                    <th data-sort="llm_model">Modell</th>
+                    <th data-sort="bullshit_percent">Bullshit %</th>
+                    <th data-sort="valid_percent">Valid %</th>
+                    <th data-sort="niveau_percent">Niveau %</th>
+                    <th>Aktionen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for video in videos %}
+                <tr data-id="{{ video[0] }}">
+                    <td>
+                        <a href="https://www.youtube.com/watch?v={{ video[10] }}" 
+                           target="_blank" class="video-link">
+                            {{ video[3] }}
+                        </a>
+                    </td>
+                    <td>{{ video[2] }}</td>
+                    <td>{{ video[1] }}</td>
+                    <td>{{ video[8] }}</td>
+                    <td class="rating-cell rating-bullshit">{{ video[4] }}%</td>
+                    <td class="rating-cell rating-valid">{{ video[5] }}%</td>
+                    <td class="rating-cell rating-niveau">{{ video[6] }}%</td>
+                    <td>
+                        <button class="btn btn-secondary btn-analysis" 
+                                data-content="{{ video[13] }}">Analyse</button>
+                        <button class="btn btn-secondary btn-transcript" 
+                                data-content="{{ video[12] }}">Transkript</button>
+                        <button class="btn btn-delete">Löschen</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div id="overlay" class="overlay"></div>
+    <div id="modalTemplate" class="modal">
+        <div class="modal-header">
+            <span class="modal-title"></span>
+            <button class="modal-close">×</button>
+        </div>
+        <div class="modal-content"></div>
+    </div>
+
+    <script>
+        // Theme switcher logic
+        const themeSwitcher = document.getElementById('theme-switcher');
+        const body = document.body;
+
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        if (savedTheme === 'light') {
+            body.classList.add('light-mode');
+            themeSwitcher.textContent = '🌙';
+        } else {
+            themeSwitcher.textContent = '☀️';
+        }
+
+        themeSwitcher.addEventListener('click', () => {
+            body.classList.toggle('light-mode');
+            if (body.classList.contains('light-mode')) {
+                localStorage.setItem('theme', 'light');
+                themeSwitcher.textContent = '🌙';
+            } else {
+                localStorage.setItem('theme', 'dark');
+                themeSwitcher.textContent = '☀️';
+            }
+        });
+
+        // Existing script
+        document.querySelectorAll('th[data-sort]').forEach(header => {
+            header.addEventListener('click', () => {
+                const column = header.dataset.sort;
+                const isAsc = header.classList.contains('sort-asc');
+                const direction = isAsc ? 'desc' : 'asc';
+                
+                document.querySelectorAll('th').forEach(h => {
+                    h.classList.remove('sort-asc', 'sort-desc');
+                });
+                
+                header.classList.add(`sort-${direction}`);
+                
+                sortTable(column, direction);
+            });
+        });
+
+        function sortTable(column, direction) {
+            const table = document.getElementById('videoTable');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            
+            rows.sort((a, b) => {
+                const aVal = a.querySelector(`td:nth-child(${getIndex(column)})`).textContent;
+                const bVal = b.querySelector(`td:nth-child(${getIndex(column)})`).textContent;
+                
+                if (column === 'set_date') {
+                    return direction === 'asc' 
+                        ? new Date(aVal) - new Date(bVal)
+                        : new Date(bVal) - new Date(aVal);
+                }
+                
+                if (column.includes('percent')) {
+                    const aNum = parseFloat(aVal);
+                    const bNum = parseFloat(bVal);
+                    return direction === 'asc' ? aNum - bNum : bNum - aNum;
+                }
+                
+                return direction === 'asc' 
+                    ? aVal.localeCompare(bVal)
+                    : bVal.localeCompare(aVal);
+            });
+            
+            while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        function getIndex(column) {
+            const headers = Array.from(document.querySelectorAll('th[data-sort]'));
+            return headers.findIndex(h => h.dataset.sort === column) + 1;
+        }
+
+        let activeModal = null;
+        let currentZIndex = 1000;
+
+        document.querySelectorAll('.btn-analysis, .btn-transcript').forEach(button => {
+            button.addEventListener('click', function() {
+                const content = this.dataset.content;
+                const title = this.classList.contains('btn-analysis') 
+                    ? 'Video Analysis' 
+                    : 'Transcript';
+                
+                createModal(title, content);
+            });
+        });
+
+        function createModal(title, content) {
+            const template = document.getElementById('modalTemplate');
+            const modal = template.cloneNode(true);
+            modal.id = '';
+            modal.querySelector('.modal-title').textContent = title;
+            
+            if (title === 'Video Analysis') {
+                modal.querySelector('.modal-content').innerHTML = content;
+            } else {
+                const pre = document.createElement('pre');
+                pre.textContent = content;
+                modal.querySelector('.modal-content').innerHTML = '';
+                modal.querySelector('.modal-content').appendChild(pre);
+            }
+            
+            document.body.appendChild(modal);
+            modal.style.display = 'block';
+            modal.style.zIndex = ++currentZIndex;
+            
+            const existingModals = document.querySelectorAll('.modal:not(#modalTemplate)').length;
+            modal.style.top = `${100 + existingModals * 30}px`;
+            modal.style.left = `${100 + existingModals * 30}px`;
+            
+            const overlay = document.getElementById('overlay');
+            overlay.style.display = 'block';
+            overlay.style.zIndex = currentZIndex - 1;
+            
+            modal.querySelector('.modal-close').addEventListener('click', () => closeModal(modal));
+            makeDraggable(modal);
+            
+            activeModal = modal;
+        }
+
+        function closeModal(modal) {
+            modal.remove();
+            const modals = document.querySelectorAll('.modal:not(#modalTemplate)');
+            if (modals.length === 0) {
+                document.getElementById('overlay').style.display = 'none';
+            }
+        }
+
+        function makeDraggable(modal) {
+            const header = modal.querySelector('.modal-header');
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            
+            header.onmousedown = dragMouseDown;
+            
+            function dragMouseDown(e) {
+                e.preventDefault();
+                modal.style.zIndex = ++currentZIndex;
+                document.getElementById('overlay').style.zIndex = currentZIndex - 1;
+                
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDrag;
+                document.onmousemove = elementDrag;
+            }
+            
+            function elementDrag(e) {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                
+                modal.style.top = `${modal.offsetTop - pos2}px`;
+                modal.style.left = `${modal.offsetLeft - pos1}px`;
+            }
+            
+            function closeDrag() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+
+        document.querySelectorAll('.btn-delete').forEach(button => {
+            button.addEventListener('click', function() {
+                const row = this.closest('tr');
+                const videoId = row.dataset.id;
+                
+                if (confirm('Are you sure you want to delete this analysis?')) {
+                    fetch(`/delete_video?id=${videoId}`, { 
+                        method: 'DELETE' 
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            row.remove();
+                        } else {
+                            alert('Error deleting video');
+                        }
+                    })
+                    .catch(() => alert('Network error'));
+                }
+            });
+        });
+
+        document.getElementById('overlay').addEventListener('click', () => {
+            document.querySelectorAll('.modal:not(#modalTemplate)').forEach(modal => {
+                modal.remove();
+            });
+            document.getElementById('overlay').style.display = 'none';
+        });
+    </script>
+</body>
+</html>

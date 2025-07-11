@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bullshitometer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="{{ url_for('index') }}" class="navbar-brand">bullshitometer</a>
+        <ul class="navbar-nav">
+            <li><a href="{{ url_for('index') }}" class="nav-link">Analyse</a></li>
+            <li><a href="{{ url_for('overview') }}" class="nav-link">Dashboard</a></li>
+            <li><a href="{{ url_for('options') }}" class="nav-link">Optionen</a></li>
+        </ul>
+        <div class="navbar-right">
+            <button id="theme-switcher" class="theme-switcher">☀️</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header>
+            <h1>bullshitometer</h1>
+            <p>transcribe -> analyze -> bullshitometer</p>
+        </header>
+        
+        <main>
+            <div class="card">
+                <form id="analysis-form">
+                    <div class="form-group">
+                        <label for="youtube_url">YouTube URL:</label>
+                        <input type="url" id="youtube_url" name="youtube_url" 
+                               placeholder="https://www.youtube.com/watch?v=..." required>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="provider">Analysis Provider:</label>
+                            <select id="provider" name="provider">
+                                <option value="" disabled selected>Providers loading...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="model-search">Search Model:</label>
+                            <input type="text" id="model-search" placeholder="e.g. gpt-4o">
+                            <select name="model" id="model" required>
+                                <option value="" disabled selected>Select a provider first...</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row form-actions">
+                        <button type="submit">Analyze Transcript</button>
+                        <a href="{{ url_for('options') }}" class="btn btn-secondary btn-options">Options</a>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="loader" id="loader">
+                <div class="spinner"></div>
+                <p>Analyzing video content. This may take several minutes...</p>
+            </div>
+            
+            <div class="card result-section" id="result-section">
+                <div class="result-header">
+                    <h2>Analysis Results</h2>
+                    <button class="copy-btn" onclick="copyToClipboard()">Copy Results</button>
+                </div>
+                
+                <div class="form-group">
+                    <label>Analysis Output:</label>
+                    <div id="analysis-output"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        
+        // Theme switcher logic
+        const themeSwitcher = document.getElementById('theme-switcher');
+        const body = document.body;
+
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        if (savedTheme === 'light') {
+            body.classList.add('light-mode');
+            themeSwitcher.textContent = '🌙';
+        } else {
+            themeSwitcher.textContent = '☀️';
+        }
+
+        themeSwitcher.addEventListener('click', () => {
+            body.classList.toggle('light-mode');
+            if (body.classList.contains('light-mode')) {
+                localStorage.setItem('theme', 'light');
+                themeSwitcher.textContent = '🌙';
+            } else {
+                localStorage.setItem('theme', 'dark');
+                themeSwitcher.textContent = '☀️';
+            }
+        });
+
+        // Existing script
+        let allModels = [];
+
+async function loadProviders() {
+    const providerSelect = document.getElementById('provider');
+    providerSelect.innerHTML = '<option value="" disabled selected>Providers loading...</option>';
+    
+    // Jinja2-Variablen aus dem Backend
+    const lastProvider = {{ last_provider | tojson }};
+    
+    try {
+        const response = await fetch('/api/providers');
+        if (!response.ok) throw new Error('Failed to fetch providers');
+        const providers = await response.json();
+        
+        providerSelect.innerHTML = '';
+        providers.forEach(p => {
+            const option = document.createElement('option');
+            option.value = p.name;
+            option.textContent = p.name;
+            providerSelect.appendChild(option);
+        });
+        
+        // NEU: Setze den ausgewählten Anbieter, falls in der Konfiguration gespeichert
+        if (lastProvider && providers.some(p => p.name === lastProvider)) {
+            providerSelect.value = lastProvider;
+        } else if (providers.length > 0) {
+            providerSelect.value = providers[0].name;
+        }
+        
+        if (providerSelect.value) {
+            loadModels(providerSelect.value);
+        }
+    } catch (error) {
+        console.error('Error loading providers:', error);
+        providerSelect.innerHTML = '<option value="" disabled selected>Error loading providers</option>';
+    }
+}
+
+async function loadModels(providerName) {
+    const modelSelect = document.getElementById('model');
+    const modelSearch = document.getElementById('model-search');
+    modelSelect.innerHTML = '<option value="" disabled selected>Loading models...</option>';
+    modelSearch.value = '';
+    
+    // Jinja2-Variablen aus dem Backend
+    const lastModel = {{ last_model | tojson }};
+
+    try {
+        const response = await fetch('/api/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider_name: providerName })
+        });
+        if (!response.ok) throw new Error('Failed to fetch models');
+        allModels = await response.json();
+        
+        populateModelSelect(allModels);
+
+        // NEU: Setze das ausgewählte Modell, falls in der Konfiguration gespeichert
+        if (lastModel && allModels.includes(lastModel)) {
+            modelSelect.value = lastModel;
+        } else if (allModels.length > 0) {
+            modelSelect.value = allModels[0];
+        }
+    } catch (error) {
+        console.error('Error loading models:', error);
+        modelSelect.innerHTML = `<option value="" disabled selected>Error loading models</option>`;
+        allModels = [];
+    }
+}
+
+function populateModelSelect(models) {
+    let provider = document.getElementById('provider').value; 
+    const modelSelect = document.getElementById('model');
+    modelSelect.innerHTML = '';
+    
+    // Prüfen, ob die Liste der Modelle leer ist.
+    if (models.length === 0) {
+        const option = document.createElement('option');
+        option.value = "";
+        option.disabled = true;
+        option.selected = true;
+        option.textContent = "No models available";
+        modelSelect.appendChild(option);
+        return;
+    }
+    
+    // Durch jedes Modellobjekt in der Liste iterieren.
+if(provider.toLowerCase() == "openrouter"){
+    models.forEach(model => {
+             const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+
+        });
+}else{
+                models.forEach(model => {
+                   const option = document.createElement('option');
+        option.value = model.id;        // Verwende die ID als Wert
+        option.textContent = model.id;  // Verwende die ID als sichtbaren Text
+        
+        modelSelect.appendChild(option);
+            });
+}
+
+
+}
+        
+// Model search functionality
+document.getElementById('model-search').addEventListener('input', function() {
+    const searchTerm = this.value.toLowerCase();
+    
+    // Filtern der Modelle nach der 'id' Eigenschaft.
+    const filteredModels = allModels.filter(model => model.id.toLowerCase().includes(searchTerm));
+    
+    populateModelSelect(filteredModels);
+    
+    if (filteredModels.length > 0) {
+        document.getElementById('model').value = filteredModels[0].id;
+    }
+});
+
+        document.getElementById('provider').addEventListener('change', function() {
+            loadModels(this.value);
+        });
+
+        document.getElementById('analysis-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('result-section').style.display = 'none';
+            
+            const formData = new FormData(this);
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Analysis failed');
+                }
+                
+                document.getElementById('analysis-output').innerHTML = data.analysis;
+                document.getElementById('result-section').style.display = 'block';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Analysis failed: ' + error.message);
+            } finally {
+                document.getElementById('loader').style.display = 'none';
+            }
+        });
+        
+        function copyToClipboard() {
+            const output = document.getElementById('analysis-output');
+            navigator.clipboard.writeText(output.innerText)
+                .then(() => alert('Results copied to clipboard!'))
+                .catch(err => console.error('Could not copy text: ', err));
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            loadProviders();
+        });
+    </script>
+</body>
+</html>

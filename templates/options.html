@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bullshitometer Optionen</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Zusätzliches CSS für die Höhe der Textfelder */
+        textarea {
+            overflow-y: hidden; /* Versteckt den Scrollbalken */
+            resize: none; /* Verhindert manuelle Größenänderung durch den Benutzer */
+        }
+        /* CSS für die aufklappbaren Anbieter */
+        .provider-list .provider-item summary,
+        .add-provider-section summary {
+            cursor: pointer;
+            font-weight: bold;
+            padding: 10px;
+            background-color: var(--card-bg-color); /* Kann je nach Theme-Farbe angepasst werden */
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 5px;
+        }
+        .provider-list .provider-item summary:hover,
+        .add-provider-section summary:hover {
+            background-color: var(--hover-bg-color);
+        }
+        .provider-list .provider-item form,
+        .add-provider-section form {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="{{ url_for('index') }}" class="navbar-brand">bullshitometer</a>
+        <ul class="navbar-nav">
+            <li><a href="{{ url_for('index') }}" class="nav-link">Analyse</a></li>
+            <li><a href="{{ url_for('overview') }}" class="nav-link">Dashboard</a></li>
+            <li><a href="{{ url_for('options') }}" class="nav-link">Optionen</a></li>
+        </ul>
+        <div class="navbar-right">
+            <button id="theme-switcher" class="theme-switcher">☀️</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header>
+            <h1>Optionen</h1>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-messages">
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <details class="card" open>
+            <summary><h2>Anbieter verwalten</h2></summary>
+            <p>Klicke auf einen Anbieter, um ihn zu bearbeiten oder zu löschen.</p>
+            <div class="provider-list">
+                {% for provider in config.providers %}
+                <details class="provider-item">
+                    <summary>{{ provider.name }}</summary>
+                    <form action="{{ url_for('options') }}" method="post">
+                        <input type="hidden" name="action" value="edit_provider">
+                        <input type="hidden" name="original_name" value="{{ provider.name }}">
+                        
+                        <div class="form-group">
+                            <label for="name-{{ loop.index }}">Name:</label>
+                            <input type="text" id="name-{{ loop.index }}" name="name" value="{{ provider.name }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="api-address-{{ loop.index }}">API Adresse:</label>
+                            <input type="url" id="api-address-{{ loop.index }}" name="api_address" value="{{ provider.api_address }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="model-api-{{ loop.index }}">Modell API Adresse:</label>
+                            <input type="url" id="model-api-{{ loop.index }}" name="model_api" value="{{ provider.model_api }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="api-key-{{ loop.index }}">API Schlüssel:</label>
+                            <input type="text" id="api-key-{{ loop.index }}" name="api_key" 
+                                   value="{{ provider.api_key | default('') }}" 
+                                   placeholder="Optional" class="key-field">
+                        </div>
+                        <div class="form-actions provider-actions">
+                            <button type="submit" class="btn-save">Speichern</button>
+                            <button type="button" class="btn-delete" onclick="document.getElementById('delete-form-{{ loop.index }}').submit();">Löschen</button>
+                        </div>
+                    </form>
+                    <form id="delete-form-{{ loop.index }}" action="{{ url_for('options') }}" method="post" style="display:none;">
+                        <input type="hidden" name="action" value="delete_provider">
+                        <input type="hidden" name="provider_name" value="{{ provider.name }}">
+                    </form>
+                </details>
+                {% endfor %}
+            </div>
+
+            <details class="add-provider-section">
+                <summary>Neuen Anbieter hinzufügen</summary>
+                <form action="{{ url_for('options') }}" method="post" class="card">
+                    <input type="hidden" name="action" value="add_provider">
+                    <div class="form-group">
+                        <label for="new_provider_name">Anbietername:</label>
+                        <input type="text" id="new_provider_name" name="provider_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new_api_address">API Adresse:</label>
+                        <input type="url" id="new_api_address" name="api_address" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new_model_api">Modell API Adresse:</label>
+                        <input type="url" id="new_model_api" name="model_api" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new_api_key">API Schlüssel (optional):</label>
+                        <input type="text" id="new_api_key" name="api_key">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit">Anbieter hinzufügen</button>
+                    </div>
+                </form>
+            </details>
+        </details>
+
+        <details class="card">
+            <summary><h2>Texte und Anweisungen bearbeiten</h2></summary>
+            <p>Passe die Anweisungen an das LLM an, um die Ausgabe zu beeinflussen.</p>
+            <form action="{{ url_for('options') }}" method="post">
+                <input type="hidden" name="action" value="update_templates">
+                <div class="form-group">
+    <label for="output_language">Ausgabe-Sprache:</label>
+    <select id="output_language" name="output_language">
+        <option value="de" {% if config.output_language == 'de' %}selected{% endif %}>Deutsch</option>
+        <option value="en" {% if config.output_language == 'en' %}selected{% endif %}>Englisch</option>
+    </select>
+</div>
+
+<div class="form-group">
+    <label for="user_prompt_template">Anleitung Analyse-Prompt:</label>
+    <textarea id="user_prompt_template" name="user_prompt_template" rows="15" class="auto-resize-textarea">{{ config.template_texts.user_prompt_template }}</textarea>
+</div>
+                <div class="form-group">
+                    <label for="importance_scale">Anleitung Wichtigkeitsskala:</label>
+                    <textarea id="importance_scale" name="importance_scale" rows="5" class="auto-resize-textarea">{{ config.template_texts.importance_scale }}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="rating_scale">Anleitung Bewertungsskala:</label>
+                    <textarea id="rating_scale" name="rating_scale" rows="5" class="auto-resize-textarea">{{ config.template_texts.rating_scale }}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="niveau_assessment">Anleitung Niveau-Bewertung:</label>
+                    <textarea id="niveau_assessment" name="niveau_assessment" rows="10" class="auto-resize-textarea">{{ config.template_texts.niveau_assessment }}</textarea>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn-save">Anweisungen speichern</button>
+                </div>
+            </form>
+        </details>
+        
+        <div class="form-actions">
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">Zurück zur Startseite</a>
+        </div>
+    </div>
+    
+    <script>
+        // Theme switcher logic
+        const themeSwitcher = document.getElementById('theme-switcher');
+        const body = document.body;
+
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        if (savedTheme === 'light') {
+            body.classList.add('light-mode');
+            themeSwitcher.textContent = '🌙';
+        } else {
+            themeSwitcher.textContent = '☀️';
+        }
+
+        themeSwitcher.addEventListener('click', () => {
+            body.classList.toggle('light-mode');
+            if (body.classList.contains('light-mode')) {
+                localStorage.setItem('theme', 'light');
+                themeSwitcher.textContent = '🌙';
+            } else {
+                localStorage.setItem('theme', 'dark');
+                themeSwitcher.textContent = '☀️';
+            }
+        });
+
+        // Auto-resize logic for textareas
+        const tx = document.getElementsByClassName("auto-resize-textarea");
+        for (let i = 0; i < tx.length; i++) {
+            tx[i].setAttribute("style", "height:" + (tx[i].scrollHeight) + "px;overflow-y:hidden;");
+            tx[i].addEventListener("input", OnInput, false);
+        }
+
+        function OnInput() {
+            this.style.height = 0;
+            this.style.height = (this.scrollHeight) + "px";
+        }
+    </script>
+</body>
+</html>
