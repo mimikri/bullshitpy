@@ -217,7 +217,13 @@ document.getElementById('model-search').addEventListener('input', function() {
     const searchTerm = this.value.toLowerCase();
     
     // Filtern der Modelle nach der 'id' Eigenschaft.
-    const filteredModels = allModels.filter(model => model.id.toLowerCase().includes(searchTerm));
+    var filteredModels = [];
+    try {
+        filteredModels = allModels.filter(model => model.id.toLowerCase().includes(searchTerm));
+    } catch (error) {
+        filteredModels = allModels.filter(model => model.toLowerCase().includes(searchTerm));
+    }
+    
     
     populateModelSelect(filteredModels);
     
